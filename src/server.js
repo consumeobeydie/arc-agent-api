@@ -1,6 +1,7 @@
 const express = require("express");
 const dotenv = require("dotenv");
 const { createX402Middleware } = require("./middleware/x402");
+const { getWalletBalance, getWalletInfo } = require("./wallet");
 
 dotenv.config();
 
@@ -8,27 +9,28 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
-const SELLER_ADDRESS = "0x54b4B44749a95070560509B6Ec0be501665CcF63";
+const SELLER_ADDRESS = process.env.CIRCLE_WALLET_ADDRESS || "0x54b4B44749a95070560509B6Ec0be501665CcF63";
 
-// X402 middleware - protects paid endpoints
+// X402 middleware
 app.use(createX402Middleware(SELLER_ADDRESS));
 
-// Health check endpoint - free
+// Health check - free
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
     network: "Arc Testnet",
     chainId: process.env.ARC_CHAIN_ID,
+    sellerAddress: SELLER_ADDRESS,
     timestamp: new Date().toISOString(),
   });
 });
 
-// Info endpoint - free
+// Info - free
 app.get("/api/info", (req, res) => {
   res.json({
     name: "Arc Intelligence API",
-    version: "1.0.0",
-    description: "X402 payment-gated API on Arc Testnet",
+    version: "2.0.0",
+    description: "X402 payment-gated API on Arc Testnet with Circle Developer Wallets",
     network: {
       name: "Arc Testnet",
       chainId: 5042002,
@@ -38,17 +40,40 @@ app.get("/api/info", (req, res) => {
     },
     endpoints: {
       free: ["/health", "/api/info"],
-      paid: ["/api/arc-data", "/api/arc-stats"],
+      paid: ["/api/arc-data", "/api/arc-stats", "/api/wallet-status"],
     },
     payment: {
       price: "$0.001 USDC per request",
-      network: "Arc Testnet",
+      network: "Base Sepolia",
       sellerAddress: SELLER_ADDRESS,
     },
   });
 });
 
-// Paid endpoint - protected by X402
+// Wallet status - paid
+app.get("/api/wallet-status", async (req, res) => {
+  try {
+    const [balance, info] = await Promise.all([
+      getWalletBalance(),
+      getWalletInfo(),
+    ]);
+    res.json({
+      wallet: {
+        id: info?.id,
+        address: info?.address,
+        blockchain: info?.blockchain,
+        state: info?.state,
+        custodyType: info?.custodyType,
+      },
+      balances: balance,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Arc data - paid
 app.get("/api/arc-data", (req, res) => {
   res.json({
     data: {
@@ -73,7 +98,7 @@ app.get("/api/arc-data", (req, res) => {
   });
 });
 
-// Paid endpoint - protected by X402
+// Arc stats - paid
 app.get("/api/arc-stats", (req, res) => {
   res.json({
     stats: {
@@ -88,7 +113,7 @@ app.get("/api/arc-stats", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Arc Intelligence API running on port ${PORT}`);
+  console.log(`Arc Intelligence API v2.0 running on port ${PORT}`);
   console.log(`Network: Arc Testnet (Chain ID: ${process.env.ARC_CHAIN_ID})`);
   console.log(`Seller address: ${SELLER_ADDRESS}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
