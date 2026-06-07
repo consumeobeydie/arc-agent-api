@@ -1,3 +1,5 @@
 node_modules/
 .env
 *.log
+recovery_file_*.dat
+.envy
